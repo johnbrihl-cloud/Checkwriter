@@ -6,11 +6,14 @@
 <title>LYC and JOFC Issuance Log and Check Printing</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='75' font-size='75'%3E%E2%91%86%3C/text%3E%3C/svg%3E" />
 
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.11.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://accounts.google.com/gsi/client"></script>
 
 <style>
   * { box-sizing: border-box; }
@@ -95,6 +98,97 @@ function saveKey(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* best effort */ }
 }
 
+// ---------- storage (Google Drive sync, appDataFolder) ----------
+// 1) Replace GOOGLE_CLIENT_ID below with the OAuth Client ID from Google Cloud Console.
+// 2) Deploy this file to a real https:// URL (Drive sign-in will not work from a file:// page).
+// 3) Add that exact URL as an Authorized JavaScript origin on the OAuth Client ID.
+// See the setup guide provided alongside this file for the full walkthrough.
+
+const GOOGLE_CLIENT_ID = "REPLACE_WITH_YOUR_CLIENT_ID.apps.googleusercontent.com";
+const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.appdata";
+const DRIVE_FILE_NAME = "checkwriter-data.json";
+
+function driveConfigured() {
+  return GOOGLE_CLIENT_ID && !GOOGLE_CLIENT_ID.startsWith("REPLACE_WITH");
+}
+
+let gTokenClient = null;
+let gAccessToken = null;
+let gTokenExpiresAt = 0;
+
+function getGoogleAccessToken(interactive) {
+  return new Promise((resolve, reject) => {
+    if (!window.google || !window.google.accounts || !window.google.accounts.oauth2) {
+      return reject(new Error("Google sign-in script hasn't loaded yet. Check your internet connection and reload."));
+    }
+    if (gAccessToken && Date.now() < gTokenExpiresAt - 30000) {
+      return resolve(gAccessToken);
+    }
+    if (!gTokenClient) {
+      gTokenClient = window.google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: DRIVE_SCOPE,
+        callback: () => {},
+      });
+    }
+    gTokenClient.callback = (resp) => {
+      if (resp.error) return reject(new Error(resp.error));
+      gAccessToken = resp.access_token;
+      gTokenExpiresAt = Date.now() + (resp.expires_in || 3600) * 1000;
+      resolve(gAccessToken);
+    };
+    gTokenClient.error_callback = (err) => reject(new Error(err?.message || "Sign-in was cancelled or failed."));
+    gTokenClient.requestAccessToken({ prompt: interactive ? "consent" : "" });
+  });
+}
+
+async function driveFindFileId(token) {
+  const params = new URLSearchParams({
+    spaces: "appDataFolder",
+    q: `name='${DRIVE_FILE_NAME}' and trashed=false`,
+    fields: "files(id,modifiedTime)",
+  });
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Drive lookup failed (${res.status})`);
+  const data = await res.json();
+  return data.files && data.files[0] ? data.files[0].id : null;
+}
+
+async function driveReadFile(token, fileId) {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Drive read failed (${res.status})`);
+  return res.json();
+}
+
+async function driveCreateFile(token, payload) {
+  const boundary = "cwboundary";
+  const metadata = { name: DRIVE_FILE_NAME, parents: ["appDataFolder"] };
+  const body =
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
+    `--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(payload)}\r\n--${boundary}--`;
+  const res = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
+    body,
+  });
+  if (!res.ok) throw new Error(`Drive create failed (${res.status})`);
+  return res.json();
+}
+
+async function driveUpdateFile(token, fileId, payload) {
+  const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`Drive update failed (${res.status})`);
+  return res.json();
+}
+
 // ---------- icons (feather-style inline SVG, no dependency) ----------
 
 const iconProps = (size) => ({ width: size, height: size, viewBox: "0 0 24 24", fill: "none",
@@ -110,6 +204,7 @@ const FilePenLine = ({size=16}) => (<svg {...iconProps(size)}><path d="M12 20h9"
 const Search = ({size=16}) => (<svg {...iconProps(size)}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>);
 const AlertTriangle = ({size=16}) => (<svg {...iconProps(size)}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>);
 const CheckCircle2 = ({size=16}) => (<svg {...iconProps(size)}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>);
+const Download = ({size=16}) => (<svg {...iconProps(size)}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>);
 
 // ---------- main app ----------
 
@@ -123,6 +218,14 @@ function CheckWriterApp() {
   const fileInputRef = useRef(null);
   const [uploadNote, setUploadNote] = useState("");
 
+  const [signedIn, setSignedIn] = useState(false);
+  const [driveFileId, setDriveFileId] = useState(null);
+  const [syncStatus, setSyncStatus] = useState("signed-out"); // signed-out | syncing | synced | error
+  const [syncMessage, setSyncMessage] = useState("");
+  const lastAppliedRemoteAt = useRef(null);
+  const skipNextPush = useRef(false);
+  const pushTimer = useRef(null);
+
   useEffect(() => {
     const a = loadKey("cw-accounts");
     const p = loadKey("cw-payees");
@@ -131,11 +234,113 @@ function CheckWriterApp() {
     if (p) setPayees(p);
     if (l) setLog(l);
     setLoaded(true);
+
+    if (driveConfigured()) {
+      getGoogleAccessToken(false)
+        .then((token) => { setSignedIn(true); return pullFromDrive(token, true); })
+        .catch(() => { setSyncStatus("signed-out"); });
+    }
   }, []);
 
   useEffect(() => { if (loaded) saveKey("cw-accounts", accounts); }, [accounts, loaded]);
   useEffect(() => { if (loaded) saveKey("cw-payees", payees); }, [payees, loaded]);
   useEffect(() => { if (loaded) saveKey("cw-log", log); }, [log, loaded]);
+
+  // Push to Drive shortly after any local change, if signed in.
+  useEffect(() => {
+    if (!loaded || !signedIn) return;
+    if (skipNextPush.current) { skipNextPush.current = false; return; }
+    if (pushTimer.current) clearTimeout(pushTimer.current);
+    pushTimer.current = setTimeout(async () => {
+      try {
+        setSyncStatus("syncing");
+        const token = await getGoogleAccessToken(false);
+        await pushToDrive(token);
+        setSyncStatus("synced");
+        setSyncMessage(`Synced to Drive • ${new Date().toLocaleTimeString()}`);
+      } catch (err) {
+        setSyncStatus("error");
+        setSyncMessage(err.message || "Sync failed.");
+      }
+    }, 1500);
+    return () => clearTimeout(pushTimer.current);
+    // eslint-disable-next-line
+  }, [accounts, payees, log, loaded, signedIn]);
+
+  // Periodically pull, and pull on tab focus, to catch changes made on other devices.
+  useEffect(() => {
+    if (!signedIn) return;
+    async function safePull() {
+      try { const token = await getGoogleAccessToken(false); await pullFromDrive(token, false); }
+      catch { /* silent background retry next interval */ }
+    }
+    const interval = setInterval(safePull, 20000);
+    window.addEventListener("focus", safePull);
+    return () => { clearInterval(interval); window.removeEventListener("focus", safePull); };
+    // eslint-disable-next-line
+  }, [signedIn, driveFileId]);
+
+  async function pullFromDrive(token, isInitial) {
+    setSyncStatus("syncing");
+    let fileId = driveFileId;
+    if (!fileId) {
+      fileId = await driveFindFileId(token);
+      setDriveFileId(fileId);
+    }
+    if (!fileId) {
+      await pushToDrive(token);
+      setSyncStatus("synced");
+      setSyncMessage("Created new Drive backup.");
+      return;
+    }
+    const remote = await driveReadFile(token, fileId);
+    if (remote && (isInitial || !lastAppliedRemoteAt.current || remote.updatedAt > lastAppliedRemoteAt.current)) {
+      skipNextPush.current = true;
+      setAccounts(remote.accounts || []);
+      setPayees(remote.payees || []);
+      setLog(remote.log || []);
+      lastAppliedRemoteAt.current = remote.updatedAt;
+    }
+    setSyncStatus("synced");
+    setSyncMessage(`Synced from Drive • ${new Date().toLocaleTimeString()}`);
+  }
+
+  async function pushToDrive(token) {
+    const payload = { updatedAt: new Date().toISOString(), accounts, payees, log };
+    if (!driveFileId) {
+      const created = await driveCreateFile(token, payload);
+      setDriveFileId(created.id);
+    } else {
+      await driveUpdateFile(token, driveFileId, payload);
+    }
+    lastAppliedRemoteAt.current = payload.updatedAt;
+  }
+
+  async function handleSignIn() {
+    if (!driveConfigured()) {
+      setSyncStatus("error");
+      setSyncMessage("Add your Google Client ID in the code first — see the setup guide.");
+      return;
+    }
+    try {
+      setSyncStatus("syncing");
+      setSyncMessage("Signing in…");
+      const token = await getGoogleAccessToken(true);
+      setSignedIn(true);
+      await pullFromDrive(token, true);
+    } catch (err) {
+      setSyncStatus("error");
+      setSyncMessage(err.message || "Sign-in failed.");
+    }
+  }
+
+  function handleSignOut() {
+    gAccessToken = null;
+    setSignedIn(false);
+    setDriveFileId(null);
+    setSyncStatus("signed-out");
+    setSyncMessage("Signed out. Changes are saved on this device only.");
+  }
 
   const selectedAccount = (id) => accounts.find((a) => a.id === id);
 
@@ -211,6 +416,10 @@ function CheckWriterApp() {
     setLog((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   }
 
+  function deleteLogEntry(id) {
+    setLog((prev) => prev.filter((r) => r.id !== id));
+  }
+
   function triggerPrint(target) {
     setPrintTarget(target);
     setTimeout(() => window.print(), 30);
@@ -228,6 +437,17 @@ function CheckWriterApp() {
               <h1>LYC and JOFC Issuance Log and Check Printing</h1>
               <p>Check writer, payee register, and issuance log</p>
             </div>
+          </div>
+          <div className="cw-sync">
+            {!signedIn ? (
+              <button className="cw-btn secondary" onClick={handleSignIn}>Sign in with Google</button>
+            ) : (
+              <>
+                <span className={`cw-sync-status cw-sync-${syncStatus}`}>{syncMessage || "Connected to Drive"}</span>
+                <button className="cw-btn secondary" onClick={handleSignOut}>Sign out</button>
+              </>
+            )}
+            {!signedIn && syncStatus === "error" && <span className="cw-sync-status cw-sync-error">{syncMessage}</span>}
           </div>
         </header>
 
@@ -251,7 +471,7 @@ function CheckWriterApp() {
             <AccountsTab accounts={accounts} onAdd={addAccount} onUpdate={updateAccount} onDelete={deleteAccount} />
           )}
           {tab === "log" && (
-            <LogTab log={log} accounts={accounts} onUpdateLog={updateLogEntry} onPrintLog={(rows) => triggerPrint({ mode: "log", rows })} />
+            <LogTab log={log} accounts={accounts} onUpdateLog={updateLogEntry} onDeleteLog={deleteLogEntry} onPrintLog={(rows) => triggerPrint({ mode: "log", rows })} />
           )}
         </main>
 
@@ -651,7 +871,7 @@ function AccountsTab({ accounts, onAdd, onUpdate, onDelete }) {
 
 // ============ LOG TAB ============
 
-function LogTab({ log, accounts, onUpdateLog, onPrintLog }) {
+function LogTab({ log, accounts, onUpdateLog, onDeleteLog, onPrintLog }) {
   const [filterAccount, setFilterAccount] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [dateFrom, setDateFrom] = useState("");
@@ -669,6 +889,43 @@ function LogTab({ log, accounts, onUpdateLog, onPrintLog }) {
   });
 
   const total = sorted.reduce((s, r) => (r.status === "cancelled" ? s : s + r.amount), 0);
+
+  function handleDelete(r) {
+    const ok = window.confirm(`Remove check #${padCheckNo(r.checkNumber)} to ${r.payee} from the log? This cannot be undone.`);
+    if (ok) onDeleteLog(r.id);
+  }
+
+  function exportExcel() {
+    const data = sorted.map((r) => ({
+      Date: r.date, "Check #": padCheckNo(r.checkNumber), Account: r.accountName, Payee: r.payee,
+      Amount: r.amount, Memo: r.memo || "", Status: r.status || "outstanding", "Date Presented": r.datePresented || "",
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Issuance Log");
+    XLSX.writeFile(wb, `issuance-log-${todayISO()}.xlsx`);
+  }
+
+  function exportPDF() {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: "landscape" });
+    doc.setFontSize(14);
+    doc.text("Check Issuance Log", 14, 14);
+    doc.autoTable({
+      startY: 20,
+      head: [["Date", "Check #", "Account", "Payee", "Amount", "Memo", "Status", "Date Presented"]],
+      body: sorted.map((r) => [
+        r.date, `#${padCheckNo(r.checkNumber)}`, r.accountName, r.payee,
+        `PHP ${money(r.amount)}`, r.memo || "", r.status || "outstanding", r.datePresented || "",
+      ]),
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [31, 45, 61] },
+    });
+    const finalY = (doc.lastAutoTable && doc.lastAutoTable.finalY) || 20;
+    doc.setFontSize(10);
+    doc.text(`Total (excludes cancelled): PHP ${money(total)}`, 14, finalY + 8);
+    doc.save(`issuance-log-${todayISO()}.pdf`);
+  }
 
   return (
     <div className="cw-card cw-wide">
@@ -690,6 +947,8 @@ function LogTab({ log, accounts, onUpdateLog, onPrintLog }) {
             <option value="status">Sort by status</option>
           </select>
           <button className="cw-btn secondary" onClick={() => onPrintLog(sorted)}><Printer size={16} /> Print log</button>
+          <button className="cw-btn secondary" onClick={exportExcel}><Download size={16} /> Export Excel</button>
+          <button className="cw-btn secondary" onClick={exportPDF}><Download size={16} /> Export PDF</button>
         </div>
       </div>
       <div className="cw-log-controls cw-log-daterow">
@@ -702,7 +961,7 @@ function LogTab({ log, accounts, onUpdateLog, onPrintLog }) {
         )}
       </div>
       <table className="cw-table">
-        <thead><tr><th>Date</th><th>Check #</th><th>Account</th><th>Payee</th><th>Amount</th><th>Memo</th><th>Status</th><th>Date presented</th></tr></thead>
+        <thead><tr><th>Date</th><th>Check #</th><th>Account</th><th>Payee</th><th>Amount</th><th>Memo</th><th>Status</th><th>Date presented</th><th></th></tr></thead>
         <tbody>
           {sorted.map((r) => (
             <tr key={r.id} className={r.status === "cancelled" ? "cw-row-cancelled" : ""}>
@@ -720,12 +979,17 @@ function LogTab({ log, accounts, onUpdateLog, onPrintLog }) {
                 <input className="cw-input cw-inline-input" type="date" value={r.datePresented || ""}
                   onChange={(e) => onUpdateLog(r.id, { datePresented: e.target.value })} />
               </td>
+              <td>
+                <button type="button" className="cw-icon-btn" title="Remove from log" onClick={() => handleDelete(r)}>
+                  <Trash2 size={14} />
+                </button>
+              </td>
             </tr>
           ))}
-          {!sorted.length && (<tr><td colSpan={8} className="cw-muted cw-empty-row">No checks issued yet.</td></tr>)}
+          {!sorted.length && (<tr><td colSpan={9} className="cw-muted cw-empty-row">No checks issued yet.</td></tr>)}
         </tbody>
         {!!sorted.length && (
-          <tfoot><tr><td colSpan={4} className="cw-total-label">Total (excludes cancelled)</td><td colSpan={4} className="cw-total-value">₱{money(total)}</td></tr></tfoot>
+          <tfoot><tr><td colSpan={4} className="cw-total-label">Total (excludes cancelled)</td><td colSpan={5} className="cw-total-value">₱{money(total)}</td></tr></tfoot>
         )}
       </table>
     </div>
@@ -774,6 +1038,11 @@ const STYLE = `
 }
 .cw-shell { max-width: 1180px; margin: 0 auto; padding: 28px 24px 60px; }
 .cw-header { display:flex; align-items:center; justify-content:space-between; margin-bottom: 20px; }
+.cw-sync { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.cw-sync-status { font-size: 12.5px; color: var(--ink-soft); }
+.cw-sync-status.cw-sync-syncing { color: #8a6d1f; }
+.cw-sync-status.cw-sync-synced { color: #2f7a4f; }
+.cw-sync-status.cw-sync-error { color: #b3261e; }
 .cw-brand { display:flex; align-items:center; gap:14px; }
 .cw-brand-mark { font-family:'IBM Plex Mono', monospace; font-size: 30px; color: var(--forest);
   background: var(--panel); border: 1.5px solid var(--line); border-radius: 10px; width: 52px; height:52px;
