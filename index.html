@@ -104,7 +104,7 @@ function saveKey(key, value) {
 // 3) Add that exact URL as an Authorized JavaScript origin on the OAuth Client ID.
 // See the setup guide provided alongside this file for the full walkthrough.
 
-const GOOGLE_CLIENT_ID ="225139945430-s25rvpl5bo1pmq3nahao54l5o1ik5ofm.apps.googleusercontent.com";
+const GOOGLE_CLIENT_ID = "225139945430-s25rvpl5bo1pmq3nahao54l5o1ik5ofm.apps.googleusercontent.com";
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.appdata";
 const DRIVE_FILE_NAME = "checkwriter-data.json";
 
@@ -500,10 +500,10 @@ function NavBtn({ active, onClick, icon, children }) {
 
 const QUICK_POS_DEFAULT = {
   pageWidth: 203.2, pageHeight: 88.9,
-  dateTop: 12, dateLeft: 150,
-  payeeTop: 34, payeeLeft: 15,
-  amountTop: 34, amountLeft: 160,
-  wordsTop: 46, wordsLeft: 15,
+  dateTop: 12, dateLeft: 150, dateFontSize: 13,
+  payeeTop: 34, payeeLeft: 15, payeeFontSize: 15,
+  amountTop: 34, amountLeft: 160, amountFontSize: 14,
+  wordsTop: 46, wordsLeft: 15, wordsFontSize: 13,
 };
 
 function CheckWriteTab({ accounts, payees, onIssue, onAddPayee, onPrint }) {
@@ -667,29 +667,37 @@ function CheckWriteTab({ accounts, payees, onIssue, onAddPayee, onPrint }) {
               <div><label className="cw-label">Check height (mm)</label>
                 <input className="cw-input" type="number" step="0.1" value={pos.pageHeight} onChange={(e) => setP("pageHeight", e.target.value)} /></div>
             </div>
-            <div className="cw-row">
+            <div className="cw-row-3">
               <div><label className="cw-label">Date — top</label>
                 <input className="cw-input" type="number" step="0.5" value={pos.dateTop} onChange={(e) => setP("dateTop", e.target.value)} /></div>
               <div><label className="cw-label">Date — left</label>
                 <input className="cw-input" type="number" step="0.5" value={pos.dateLeft} onChange={(e) => setP("dateLeft", e.target.value)} /></div>
+              <div><label className="cw-label">Date — font size</label>
+                <input className="cw-input" type="number" step="0.5" min="6" value={pos.dateFontSize} onChange={(e) => setP("dateFontSize", e.target.value)} /></div>
             </div>
-            <div className="cw-row">
+            <div className="cw-row-3">
               <div><label className="cw-label">Payee — top</label>
                 <input className="cw-input" type="number" step="0.5" value={pos.payeeTop} onChange={(e) => setP("payeeTop", e.target.value)} /></div>
               <div><label className="cw-label">Payee — left</label>
                 <input className="cw-input" type="number" step="0.5" value={pos.payeeLeft} onChange={(e) => setP("payeeLeft", e.target.value)} /></div>
+              <div><label className="cw-label">Payee — font size</label>
+                <input className="cw-input" type="number" step="0.5" min="6" value={pos.payeeFontSize} onChange={(e) => setP("payeeFontSize", e.target.value)} /></div>
             </div>
-            <div className="cw-row">
+            <div className="cw-row-3">
               <div><label className="cw-label">Amount — top</label>
                 <input className="cw-input" type="number" step="0.5" value={pos.amountTop} onChange={(e) => setP("amountTop", e.target.value)} /></div>
               <div><label className="cw-label">Amount — left</label>
                 <input className="cw-input" type="number" step="0.5" value={pos.amountLeft} onChange={(e) => setP("amountLeft", e.target.value)} /></div>
+              <div><label className="cw-label">Amount — font size</label>
+                <input className="cw-input" type="number" step="0.5" min="6" value={pos.amountFontSize} onChange={(e) => setP("amountFontSize", e.target.value)} /></div>
             </div>
-            <div className="cw-row">
+            <div className="cw-row-3">
               <div><label className="cw-label">Words — top</label>
                 <input className="cw-input" type="number" step="0.5" value={pos.wordsTop} onChange={(e) => setP("wordsTop", e.target.value)} /></div>
               <div><label className="cw-label">Words — left</label>
                 <input className="cw-input" type="number" step="0.5" value={pos.wordsLeft} onChange={(e) => setP("wordsLeft", e.target.value)} /></div>
+              <div><label className="cw-label">Words — font size</label>
+                <input className="cw-input" type="number" step="0.5" min="6" value={pos.wordsFontSize} onChange={(e) => setP("wordsFontSize", e.target.value)} /></div>
             </div>
             <div className="cw-actions">
               <button type="button" className="cw-btn secondary" onClick={() => setPos(QUICK_POS_DEFAULT)}>Reset to defaults</button>
@@ -701,10 +709,10 @@ function CheckWriteTab({ accounts, payees, onIssue, onAddPayee, onPrint }) {
       <div className="cw-card cw-preview-wrap">
         <h2>Print preview</h2>
         <div className="quick-preview-outline" style={{ aspectRatio: `${pos.pageWidth} / ${pos.pageHeight}` }}>
-          <span className="quick-field date" style={{ top: `${(pos.dateTop / pos.pageHeight) * 100}%`, left: `${(pos.dateLeft / pos.pageWidth) * 100}%` }}>{date ? formatCheckDate(date) : "—"}</span>
-          <span className="quick-field payee" style={{ top: `${(pos.payeeTop / pos.pageHeight) * 100}%`, left: `${(pos.payeeLeft / pos.pageWidth) * 100}%` }}>{resolvePayeeName() || "Payee name"}</span>
-          <span className="quick-field amount" style={{ top: `${(pos.amountTop / pos.pageHeight) * 100}%`, left: `${(pos.amountLeft / pos.pageWidth) * 100}%` }}>₱{numericAmount > 0 ? money(numericAmount) : "0.00"}</span>
-          <span className="quick-field words" style={{ top: `${(pos.wordsTop / pos.pageHeight) * 100}%`, left: `${(pos.wordsLeft / pos.pageWidth) * 100}%` }}>{words || "Amount in words"}</span>
+          <span className="quick-field date" style={{ top: `${(pos.dateTop / pos.pageHeight) * 100}%`, left: `${(pos.dateLeft / pos.pageWidth) * 100}%`, fontSize: `${(pos.dateFontSize || 13) * 0.75}px` }}>{date ? formatCheckDate(date) : "—"}</span>
+          <span className="quick-field payee" style={{ top: `${(pos.payeeTop / pos.pageHeight) * 100}%`, left: `${(pos.payeeLeft / pos.pageWidth) * 100}%`, fontSize: `${(pos.payeeFontSize || 15) * 0.75}px` }}>{resolvePayeeName() || "Payee name"}</span>
+          <span className="quick-field amount" style={{ top: `${(pos.amountTop / pos.pageHeight) * 100}%`, left: `${(pos.amountLeft / pos.pageWidth) * 100}%`, fontSize: `${(pos.amountFontSize || 14) * 0.75}px` }}>₱{numericAmount > 0 ? money(numericAmount) : "0.00"}</span>
+          <span className="quick-field words" style={{ top: `${(pos.wordsTop / pos.pageHeight) * 100}%`, left: `${(pos.wordsLeft / pos.pageWidth) * 100}%`, fontSize: `${(pos.wordsFontSize || 13) * 0.75}px` }}>{words || "Amount in words"}</span>
         </div>
         <p className="cw-hint">This shows only what will actually print. Account, check number, and memo are tracked in the Issuance Log but aren't printed since they're already on the check.</p>
       </div>
@@ -719,10 +727,10 @@ function QuickCheckPrintable({ data }) {
   return (
     <div className="print-quick-page" style={{ width: `${p.pageWidth}mm`, height: `${p.pageHeight}mm` }}>
       <style>{`@page checkpage { size: ${p.pageWidth}mm ${p.pageHeight}mm; margin: 0; }`}</style>
-      <span className="quick-field date" style={{ top: `${p.dateTop}mm`, left: `${p.dateLeft}mm` }}>{formatCheckDate(date)}</span>
-      <span className="quick-field payee" style={{ top: `${p.payeeTop}mm`, left: `${p.payeeLeft}mm` }}>{payee}</span>
-      <span className="quick-field amount" style={{ top: `${p.amountTop}mm`, left: `${p.amountLeft}mm` }}>₱{money(amount)}</span>
-      <span className="quick-field words" style={{ top: `${p.wordsTop}mm`, left: `${p.wordsLeft}mm` }}>{words}</span>
+      <span className="quick-field date" style={{ top: `${p.dateTop}mm`, left: `${p.dateLeft}mm`, fontSize: `${p.dateFontSize}px` }}>{formatCheckDate(date)}</span>
+      <span className="quick-field payee" style={{ top: `${p.payeeTop}mm`, left: `${p.payeeLeft}mm`, fontSize: `${p.payeeFontSize}px` }}>{payee}</span>
+      <span className="quick-field amount" style={{ top: `${p.amountTop}mm`, left: `${p.amountLeft}mm`, fontSize: `${p.amountFontSize}px` }}>₱{money(amount)}</span>
+      <span className="quick-field words" style={{ top: `${p.wordsTop}mm`, left: `${p.wordsLeft}mm`, fontSize: `${p.wordsFontSize}px` }}>{words}</span>
     </div>
   );
 }
@@ -877,11 +885,32 @@ function LogTab({ log, accounts, onUpdateLog, onDeleteLog, onPrintLog }) {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [sortBy, setSortBy] = useState("date");
+  const [searchPayee, setSearchPayee] = useState("");
+  const [searchCheckNo, setSearchCheckNo] = useState("");
+  const [searchAmount, setSearchAmount] = useState("");
+  const [amountFrom, setAmountFrom] = useState("");
+  const [amountTo, setAmountTo] = useState("");
 
   let filtered = filterAccount === "all" ? log : log.filter((r) => r.accountId === filterAccount);
   if (filterStatus !== "all") filtered = filtered.filter((r) => (r.status || "outstanding") === filterStatus);
   if (dateFrom) filtered = filtered.filter((r) => r.date >= dateFrom);
   if (dateTo) filtered = filtered.filter((r) => r.date <= dateTo);
+  if (searchPayee.trim()) {
+    const q = searchPayee.trim().toLowerCase();
+    filtered = filtered.filter((r) => (r.payee || "").toLowerCase().includes(q));
+  }
+  if (searchCheckNo.trim()) {
+    const q = searchCheckNo.trim().replace(/^#/, "");
+    filtered = filtered.filter((r) => padCheckNo(r.checkNumber).includes(q) || String(r.checkNumber).includes(q));
+  }
+  if (searchAmount.trim()) {
+    const q = searchAmount.trim();
+    filtered = filtered.filter((r) => money(r.amount).includes(q) || String(r.amount).includes(q));
+  }
+  const amtFrom = parseFloat(amountFrom);
+  if (!isNaN(amtFrom)) filtered = filtered.filter((r) => r.amount >= amtFrom);
+  const amtTo = parseFloat(amountTo);
+  if (!isNaN(amtTo)) filtered = filtered.filter((r) => r.amount <= amtTo);
 
   const sorted = [...filtered].sort((a, b) => {
     if (sortBy === "status") return (a.status || "outstanding").localeCompare(b.status || "outstanding") || (b.date || "").localeCompare(a.date || "");
@@ -889,6 +918,12 @@ function LogTab({ log, accounts, onUpdateLog, onDeleteLog, onPrintLog }) {
   });
 
   const total = sorted.reduce((s, r) => (r.status === "cancelled" ? s : s + r.amount), 0);
+  const hasSearchFilters = searchPayee || searchCheckNo || searchAmount || amountFrom || amountTo || dateFrom || dateTo;
+
+  function clearAllFilters() {
+    setSearchPayee(""); setSearchCheckNo(""); setSearchAmount("");
+    setAmountFrom(""); setAmountTo(""); setDateFrom(""); setDateTo("");
+  }
 
   function handleDelete(r) {
     const ok = window.confirm(`Remove check #${padCheckNo(r.checkNumber)} to ${r.payee} from the log? This cannot be undone.`);
@@ -952,12 +987,24 @@ function LogTab({ log, accounts, onUpdateLog, onDeleteLog, onPrintLog }) {
         </div>
       </div>
       <div className="cw-log-controls cw-log-daterow">
+        <div><label className="cw-label">Search payee</label>
+          <input className="cw-input cw-inline-input" value={searchPayee} onChange={(e) => setSearchPayee(e.target.value)} placeholder="Payee name" /></div>
+        <div><label className="cw-label">Search check #</label>
+          <input className="cw-input cw-inline-input" value={searchCheckNo} onChange={(e) => setSearchCheckNo(e.target.value)} placeholder="e.g. 0007" /></div>
+        <div><label className="cw-label">Search amount</label>
+          <input className="cw-input cw-inline-input" value={searchAmount} onChange={(e) => setSearchAmount(e.target.value)} placeholder="e.g. 1,500.00" /></div>
+      </div>
+      <div className="cw-log-controls cw-log-daterow">
         <div><label className="cw-label">From date</label>
           <input className="cw-input cw-inline-input" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} /></div>
         <div><label className="cw-label">To date</label>
           <input className="cw-input cw-inline-input" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} /></div>
-        {(dateFrom || dateTo) && (
-          <button type="button" className="cw-btn secondary" onClick={() => { setDateFrom(""); setDateTo(""); }}>Clear dates</button>
+        <div><label className="cw-label">Amount from</label>
+          <input className="cw-input cw-inline-input" type="number" step="0.01" min="0" value={amountFrom} onChange={(e) => setAmountFrom(e.target.value)} placeholder="Min" /></div>
+        <div><label className="cw-label">Amount to</label>
+          <input className="cw-input cw-inline-input" type="number" step="0.01" min="0" value={amountTo} onChange={(e) => setAmountTo(e.target.value)} placeholder="Max" /></div>
+        {hasSearchFilters && (
+          <button type="button" className="cw-btn secondary" onClick={clearAllFilters}>Clear filters</button>
         )}
       </div>
       <table className="cw-table">
@@ -1066,6 +1113,7 @@ const STYLE = `
 .cw-input:focus, .cw-select:focus { outline: 2px solid var(--forest); outline-offset: 1px; }
 .cw-inline-input { padding: 5px 8px; font-size:13px; }
 .cw-row { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.cw-row-3 { display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
 .cw-hint { font-size: 12.5px; color: var(--ink-soft); margin: 6px 0 0; }
 .upload-note { color: var(--forest-dark); font-weight: 500; }
 .cw-words { font-family:'Fraunces', serif; font-style: italic; font-size: 14.5px; margin: 14px 0 0; color: var(--ink); }
