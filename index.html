@@ -79,11 +79,12 @@ function amountToWords(amount) {
 
 function padCheckNo(n) { return String(n || 0).padStart(4, "0"); }
 
-function formatCheckDate(iso) {
+function formatCheckDate(iso, separator) {
   if (!iso) return "";
   const [y, m, d] = iso.split("-");
   if (!y || !m || !d) return iso;
-  return `${m} ${d} ${y}`;
+  const sep = separator === undefined ? " " : separator;
+  return `${m}${sep}${d}${sep}${y}`;
 }
 
 // ---------- storage (browser localStorage) ----------
@@ -104,7 +105,7 @@ function saveKey(key, value) {
 // 3) Add that exact URL as an Authorized JavaScript origin on the OAuth Client ID.
 // See the setup guide provided alongside this file for the full walkthrough.
 
-const GOOGLE_CLIENT_ID = "225139945430-s25rvpl5bo1pmq3nahao54l5o1ik5ofm.apps.googleusercontent.com";
+const GOOGLE_CLIENT_ID = "REPLACE_WITH_YOUR_CLIENT_ID.apps.googleusercontent.com";
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.appdata";
 const DRIVE_FILE_NAME = "checkwriter-data.json";
 
@@ -471,7 +472,7 @@ function CheckWriterApp() {
             <AccountsTab accounts={accounts} onAdd={addAccount} onUpdate={updateAccount} onDelete={deleteAccount} />
           )}
           {tab === "log" && (
-            <LogTab log={log} accounts={accounts} onUpdateLog={updateLogEntry} onDeleteLog={deleteLogEntry} onPrintLog={(rows) => triggerPrint({ mode: "log", rows })} />
+            <LogTab log={log} accounts={accounts} onUpdateLog={updateLogEntry} onDeleteLog={deleteLogEntry} onPrintLog={(rows, orientation) => triggerPrint({ mode: "log", rows, orientation })} />
           )}
         </main>
 
@@ -479,7 +480,7 @@ function CheckWriterApp() {
       </div>
 
       <div className="print-area">
-        {printTarget?.mode === "log" && <LogPrintable log={printTarget.rows || log} accounts={accounts} />}
+        {printTarget?.mode === "log" && <LogPrintable log={printTarget.rows || log} accounts={accounts} orientation={printTarget.orientation || "landscape"} />}
         {printTarget?.mode === "quick" && <QuickCheckPrintable data={printTarget.quick} />}
       </div>
     </div>
@@ -499,11 +500,12 @@ function NavBtn({ active, onClick, icon, children }) {
 // but only prints Date / Payee / Amount / Amount in words onto pre-printed check stock.
 
 const QUICK_POS_DEFAULT = {
-  pageWidth: 203.2, pageHeight: 88.9,
-  dateTop: 12, dateLeft: 150, dateFontSize: 13,
-  payeeTop: 34, payeeLeft: 15, payeeFontSize: 15,
-  amountTop: 34, amountLeft: 160, amountFontSize: 14,
-  wordsTop: 46, wordsLeft: 15, wordsFontSize: 13,
+  pageWidth: 203.55, pageHeight: 75.14, orientation: "landscape",
+  marginTop: 0, marginLeft: 0,
+  dateTop: 9.82, dateLeft: 152.94, dateFontSize: 14, dateSeparator: "  ", dateLetterSpacing: 3,
+  payeeTop: 19.64, payeeLeft: 27.08, payeeFontSize: 13.2,
+  amountTop: 17.01, amountLeft: 142.36, amountFontSize: 13.2,
+  wordsTop: 27.17, wordsLeft: 36.39, wordsFontSize: 13.2,
 };
 
 function CheckWriteTab({ accounts, payees, onIssue, onAddPayee, onPrint }) {
@@ -536,6 +538,8 @@ function CheckWriteTab({ accounts, payees, onIssue, onAddPayee, onPrint }) {
   }
 
   function setP(field, val) { setPos((p) => ({ ...p, [field]: val === "" ? "" : parseFloat(val) })); }
+  function setPOrientation(val) { setPos((p) => ({ ...p, orientation: val })); }
+  function setPString(field, val) { setPos((p) => ({ ...p, [field]: val })); }
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -662,11 +666,25 @@ function CheckWriteTab({ accounts, payees, onIssue, onAddPayee, onPrint }) {
             <h2>Fine-tune print position (mm from top-left)</h2>
             <p className="cw-hint">If the printed fields land in the wrong spot on the check paper, nudge the values below and print again. Settings are remembered.</p>
             <div className="cw-row">
+              <div><label className="cw-label">Print orientation</label>
+                <select className="cw-select" value={pos.orientation || "landscape"} onChange={(e) => setPOrientation(e.target.value)}>
+                  <option value="landscape">Landscape (check's natural shape)</option>
+                  <option value="portrait">Portrait (rotate 90° for portrait-fed paper)</option>
+                </select></div>
+            </div>
+            <div className="cw-row">
               <div><label className="cw-label">Check width (mm)</label>
                 <input className="cw-input" type="number" step="0.1" value={pos.pageWidth} onChange={(e) => setP("pageWidth", e.target.value)} /></div>
               <div><label className="cw-label">Check height (mm)</label>
                 <input className="cw-input" type="number" step="0.1" value={pos.pageHeight} onChange={(e) => setP("pageHeight", e.target.value)} /></div>
             </div>
+            <div className="cw-row">
+              <div><label className="cw-label">Margin (top/bottom, mm)</label>
+                <input className="cw-input" type="number" step="0.5" value={pos.marginTop} onChange={(e) => setP("marginTop", e.target.value)} /></div>
+              <div><label className="cw-label">Margin (left/right, mm)</label>
+                <input className="cw-input" type="number" step="0.5" value={pos.marginLeft} onChange={(e) => setP("marginLeft", e.target.value)} /></div>
+            </div>
+            <p className="cw-hint">Some printers add their own unprintable edge on top of this. If everything is shifted the same way on every print, adjust the margin here rather than nudging every field individually.</p>
             <div className="cw-row-3">
               <div><label className="cw-label">Date — top</label>
                 <input className="cw-input" type="number" step="0.5" value={pos.dateTop} onChange={(e) => setP("dateTop", e.target.value)} /></div>
@@ -675,6 +693,15 @@ function CheckWriteTab({ accounts, payees, onIssue, onAddPayee, onPrint }) {
               <div><label className="cw-label">Date — font size</label>
                 <input className="cw-input" type="number" step="0.5" min="6" value={pos.dateFontSize} onChange={(e) => setP("dateFontSize", e.target.value)} /></div>
             </div>
+            <div className="cw-row-3">
+              <div><label className="cw-label">Date — segment spacing</label>
+                <input className="cw-input" value={pos.dateSeparator} onChange={(e) => setPString("dateSeparator", e.target.value)} placeholder="e.g. one space" /></div>
+              <div><label className="cw-label">Date — letter spacing (px)</label>
+                <input className="cw-input" type="number" step="0.5" value={pos.dateLetterSpacing} onChange={(e) => setP("dateLetterSpacing", e.target.value)} /></div>
+              <div><label className="cw-label">Date preview</label>
+                <div className="cw-input cw-input-readonly">{formatCheckDate(date || todayISO(), pos.dateSeparator)}</div></div>
+            </div>
+            <p className="cw-hint">"Segment spacing" is the text between month, day, and year (type extra spaces for a wider gap, or clear it for none). If the year gets clipped when printing, this is often because it runs past the check's right edge — try a smaller segment spacing, a negative letter spacing to tighten it, a smaller font size, or shift "Date — left" further left.</p>
             <div className="cw-row-3">
               <div><label className="cw-label">Payee — top</label>
                 <input className="cw-input" type="number" step="0.5" value={pos.payeeTop} onChange={(e) => setP("payeeTop", e.target.value)} /></div>
@@ -709,10 +736,10 @@ function CheckWriteTab({ accounts, payees, onIssue, onAddPayee, onPrint }) {
       <div className="cw-card cw-preview-wrap">
         <h2>Print preview</h2>
         <div className="quick-preview-outline" style={{ aspectRatio: `${pos.pageWidth} / ${pos.pageHeight}` }}>
-          <span className="quick-field date" style={{ top: `${(pos.dateTop / pos.pageHeight) * 100}%`, left: `${(pos.dateLeft / pos.pageWidth) * 100}%`, fontSize: `${(pos.dateFontSize || 13) * 0.75}px` }}>{date ? formatCheckDate(date) : "—"}</span>
-          <span className="quick-field payee" style={{ top: `${(pos.payeeTop / pos.pageHeight) * 100}%`, left: `${(pos.payeeLeft / pos.pageWidth) * 100}%`, fontSize: `${(pos.payeeFontSize || 15) * 0.75}px` }}>{resolvePayeeName() || "Payee name"}</span>
-          <span className="quick-field amount" style={{ top: `${(pos.amountTop / pos.pageHeight) * 100}%`, left: `${(pos.amountLeft / pos.pageWidth) * 100}%`, fontSize: `${(pos.amountFontSize || 14) * 0.75}px` }}>₱{numericAmount > 0 ? money(numericAmount) : "0.00"}</span>
-          <span className="quick-field words" style={{ top: `${(pos.wordsTop / pos.pageHeight) * 100}%`, left: `${(pos.wordsLeft / pos.pageWidth) * 100}%`, fontSize: `${(pos.wordsFontSize || 13) * 0.75}px` }}>{words || "Amount in words"}</span>
+          <span className="quick-field date" style={{ top: `${((pos.marginTop + pos.dateTop) / pos.pageHeight) * 100}%`, left: `${((pos.marginLeft + pos.dateLeft) / pos.pageWidth) * 100}%`, fontSize: `${(pos.dateFontSize || 13) * 0.75}px`, letterSpacing: `${(pos.dateLetterSpacing || 0) * 0.75}px` }}>{date ? formatCheckDate(date, pos.dateSeparator) : "—"}</span>
+          <span className="quick-field payee" style={{ top: `${((pos.marginTop + pos.payeeTop) / pos.pageHeight) * 100}%`, left: `${((pos.marginLeft + pos.payeeLeft) / pos.pageWidth) * 100}%`, fontSize: `${(pos.payeeFontSize || 15) * 0.75}px` }}>{resolvePayeeName() || "Payee name"}</span>
+          <span className="quick-field amount" style={{ top: `${((pos.marginTop + pos.amountTop) / pos.pageHeight) * 100}%`, left: `${((pos.marginLeft + pos.amountLeft) / pos.pageWidth) * 100}%`, fontSize: `${(pos.amountFontSize || 14) * 0.75}px` }}>{numericAmount > 0 ? money(numericAmount) : "0.00"}</span>
+          <span className="quick-field words" style={{ top: `${((pos.marginTop + pos.wordsTop) / pos.pageHeight) * 100}%`, left: `${((pos.marginLeft + pos.wordsLeft) / pos.pageWidth) * 100}%`, fontSize: `${(pos.wordsFontSize || 13) * 0.75}px` }}>{words || "Amount in words"}</span>
         </div>
         <p className="cw-hint">This shows only what will actually print. Account, check number, and memo are tracked in the Issuance Log but aren't printed since they're already on the check.</p>
       </div>
@@ -724,14 +751,27 @@ function QuickCheckPrintable({ data }) {
   if (!data) return null;
   const { payee, date, amount, words, pos } = data;
   const p = { ...QUICK_POS_DEFAULT, ...pos };
-  return (
+  const isPortrait = p.orientation === "portrait";
+  const pageSizeMm = isPortrait ? `${p.pageHeight}mm ${p.pageWidth}mm` : `${p.pageWidth}mm ${p.pageHeight}mm`;
+
+  const checkContent = (
     <div className="print-quick-page" style={{ width: `${p.pageWidth}mm`, height: `${p.pageHeight}mm` }}>
-      <style>{`@page checkpage { size: ${p.pageWidth}mm ${p.pageHeight}mm; margin: 0; }`}</style>
-      <span className="quick-field date" style={{ top: `${p.dateTop}mm`, left: `${p.dateLeft}mm`, fontSize: `${p.dateFontSize}px` }}>{formatCheckDate(date)}</span>
-      <span className="quick-field payee" style={{ top: `${p.payeeTop}mm`, left: `${p.payeeLeft}mm`, fontSize: `${p.payeeFontSize}px` }}>{payee}</span>
-      <span className="quick-field amount" style={{ top: `${p.amountTop}mm`, left: `${p.amountLeft}mm`, fontSize: `${p.amountFontSize}px` }}>₱{money(amount)}</span>
-      <span className="quick-field words" style={{ top: `${p.wordsTop}mm`, left: `${p.wordsLeft}mm`, fontSize: `${p.wordsFontSize}px` }}>{words}</span>
+      <span className="quick-field date" style={{ top: `${p.marginTop + p.dateTop}mm`, left: `${p.marginLeft + p.dateLeft}mm`, fontSize: `${p.dateFontSize}px`, letterSpacing: `${p.dateLetterSpacing || 0}px` }}>{formatCheckDate(date, p.dateSeparator)}</span>
+      <span className="quick-field payee" style={{ top: `${p.marginTop + p.payeeTop}mm`, left: `${p.marginLeft + p.payeeLeft}mm`, fontSize: `${p.payeeFontSize}px` }}>{payee}</span>
+      <span className="quick-field amount" style={{ top: `${p.marginTop + p.amountTop}mm`, left: `${p.marginLeft + p.amountLeft}mm`, fontSize: `${p.amountFontSize}px` }}>{money(amount)}</span>
+      <span className="quick-field words" style={{ top: `${p.marginTop + p.wordsTop}mm`, left: `${p.marginLeft + p.wordsLeft}mm`, fontSize: `${p.wordsFontSize}px` }}>{words}</span>
     </div>
+  );
+
+  return (
+    <>
+      <style>{`@page checkpage { size: ${pageSizeMm}; margin: 0; }`}</style>
+      {isPortrait ? (
+        <div className="print-quick-portrait-wrap" style={{ width: `${p.pageHeight}mm`, height: `${p.pageWidth}mm` }}>
+          {checkContent}
+        </div>
+      ) : checkContent}
+    </>
   );
 }
 
@@ -885,6 +925,7 @@ function LogTab({ log, accounts, onUpdateLog, onDeleteLog, onPrintLog }) {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [sortBy, setSortBy] = useState("date");
+  const [printOrientation, setPrintOrientation] = useState("landscape");
   const [searchPayee, setSearchPayee] = useState("");
   const [searchCheckNo, setSearchCheckNo] = useState("");
   const [searchAmount, setSearchAmount] = useState("");
@@ -943,7 +984,7 @@ function LogTab({ log, accounts, onUpdateLog, onDeleteLog, onPrintLog }) {
 
   function exportPDF() {
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: "landscape" });
+    const doc = new jsPDF({ orientation: printOrientation });
     doc.setFontSize(14);
     doc.text("Check Issuance Log", 14, 14);
     doc.autoTable({
@@ -981,7 +1022,11 @@ function LogTab({ log, accounts, onUpdateLog, onDeleteLog, onPrintLog }) {
             <option value="date">Sort by date</option>
             <option value="status">Sort by status</option>
           </select>
-          <button className="cw-btn secondary" onClick={() => onPrintLog(sorted)}><Printer size={16} /> Print log</button>
+          <select className="cw-select" value={printOrientation} onChange={(e) => setPrintOrientation(e.target.value)}>
+            <option value="landscape">Landscape</option>
+            <option value="portrait">Portrait</option>
+          </select>
+          <button className="cw-btn secondary" onClick={() => onPrintLog(sorted, printOrientation)}><Printer size={16} /> Print log</button>
           <button className="cw-btn secondary" onClick={exportExcel}><Download size={16} /> Export Excel</button>
           <button className="cw-btn secondary" onClick={exportPDF}><Download size={16} /> Export PDF</button>
         </div>
@@ -1053,10 +1098,11 @@ function EmptyState({ icon, title, body }) {
   );
 }
 
-function LogPrintable({ log, accounts }) {
+function LogPrintable({ log, accounts, orientation }) {
   const total = log.reduce((s, r) => (r.status === "cancelled" ? s : s + r.amount), 0);
   return (
     <div className="print-log-page">
+      <style>{`@page logpage { size: ${orientation === "portrait" ? "portrait" : "landscape"}; margin: 15mm; }`}</style>
       <h1>Check Issuance Log</h1>
       <table>
         <thead><tr><th>Date</th><th>Check #</th><th>Account</th><th>Payee</th><th>Amount</th><th>Memo</th><th>Status</th><th>Date presented</th></tr></thead>
@@ -1111,6 +1157,7 @@ const STYLE = `
 .cw-input, .cw-select { width:100%; box-sizing:border-box; padding: 9px 11px; border-radius:8px; border:1px solid var(--line);
   font-family:'Inter', sans-serif; font-size: 14px; background: #fff; color: var(--ink); }
 .cw-input:focus, .cw-select:focus { outline: 2px solid var(--forest); outline-offset: 1px; }
+.cw-input-readonly { background: var(--paper-alt, #f3f1ea); color: var(--ink-soft); font-family:'IBM Plex Mono', monospace; font-size: 13px; white-space: nowrap; overflow-x: auto; }
 .cw-inline-input { padding: 5px 8px; font-size:13px; }
 .cw-row { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .cw-row-3 { display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
@@ -1184,27 +1231,33 @@ const STYLE = `
 .check-sig-line { width:100%; border-top: 1px solid var(--ink); margin-bottom: 4px; height: 26px; }
 .check-micr { font-family:'IBM Plex Mono', monospace; font-size: 15px; letter-spacing: 2px; color: var(--ink); text-align:center; padding-top: 6px; }
 .print-area { display:none; }
-/* Standard Philippine (PCHC) check size: 8in x 3.5in (203.2mm x 88.9mm) */
-@page checkpage { size: 203.2mm 88.9mm; margin: 0; }
+/* Default check page size, measured directly from the user's scanned PNB check (203.55mm x 75.14mm) */
+@page checkpage { size: 203.55mm 75.14mm; margin: 0; }
+@page logpage { size: landscape; margin: 15mm; }
 @media print {
   .no-print { display:none !important; }
   .print-area { display:block !important; }
   body { background: #fff; }
   .print-check-page, .print-quick-page {
-    page: checkpage; width: 203.2mm; height: 88.9mm; box-sizing: border-box; padding: 8mm 10mm; overflow: hidden;
+    page: checkpage; width: 203.55mm; height: 75.14mm; box-sizing: border-box; overflow: hidden;
   }
-  .print-log-page { padding: 20px; font-family:'Inter', sans-serif; }
+  .print-quick-portrait-wrap { page: checkpage; }
+  .print-log-page { page: logpage; padding: 20px; font-family:'Inter', sans-serif; }
   .print-log-page h1 { font-family:'Fraunces', serif; font-size: 20px; margin-bottom: 16px; }
   .print-log-page table { width:100%; border-collapse: collapse; font-size: 12px; }
   .print-log-page th, .print-log-page td { text-align:left; border-bottom: 1px solid #ccc; padding: 6px 8px; }
   .print-log-total { text-align:right; font-weight:600; margin-top: 12px; }
 }
 .print-quick-page { position: relative; }
+.print-quick-portrait-wrap { position: relative; overflow: hidden; }
+.print-quick-portrait-wrap .print-quick-page {
+  position: absolute; top: 0; left: 0; transform-origin: top left; transform: rotate(90deg) translateY(-100%);
+}
 .quick-field { position: absolute; white-space: nowrap; }
-.quick-field.payee { font-family:'Fraunces', serif; font-size: 15px; }
+.quick-field.payee { font-family:'Fraunces', serif; font-weight:600; font-style: italic; font-size: 15px; }
 .quick-field.date { font-family:'IBM Plex Mono', monospace; font-size: 13px; }
 .quick-field.amount { font-family:'IBM Plex Mono', monospace; font-weight:600; font-size: 14px; }
-.quick-field.words { font-family:'Fraunces', serif; font-style: italic; font-size: 13px; max-width: 170mm; white-space: normal; }
+.quick-field.words { font-family:'Fraunces', serif; font-weight:600; font-style: italic; font-size: 13px; max-width: 170mm; white-space: normal; }
 .quick-preview-outline { position: relative; width: 100%; background: #fff; border: 1px solid var(--line); border-radius: 6px;
   box-shadow: 0 1px 3px rgba(31,45,61,0.08); overflow: hidden; }
 .quick-preview-outline .quick-field { position: absolute; transform: translateY(-2px); font-size: 11px; white-space: nowrap; max-width: 60%; }
